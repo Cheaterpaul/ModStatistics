@@ -1,14 +1,13 @@
 FROM python:bullseye
 LABEL authors="cheaterpaul"
 
-WORKDIR /usr/local/bin
+WORKDIR /app
 
 ENV DB_DATABASE modstats
 ENV DB_PORT 3306
 ENV DB_USER modstats
 
-RUN apt-get update && apt-get install -y gcc wget cron
-RUN pip3 install --no-cache-dir pymysql requests
+RUN apt-get update && apt-get install -y gcc wget cron vim python3-pymysql python3-requests
 
 COPY main.py .
 COPY cronjob /etc/cron.d/cronjob

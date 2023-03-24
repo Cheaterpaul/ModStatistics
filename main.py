@@ -11,7 +11,7 @@ print("[ModStats] Start")
 modrinth_url = "https://api.modrinth.com/v2"
 curseforge_url = "https://api.curseforge.com"
 
-dbname = database = os.environ["DB_DATABASE"]
+dbname = os.environ["DB_DATABASE"]
 
 
 def get_db():
@@ -45,10 +45,24 @@ def get_curseforge_mod(mod_id):
 
 
 def get_curseforge_files(mod_id):
-    return requests.get(f"{curseforge_url}/v1/mods/{mod_id}/files", headers={
-        'Accept': 'application/json',
-        'x-api-key': os.environ['CURSEFORGE_API_KEY']
-    })
+    list = []
+    all = 1
+    index = 0
+
+    while index < all:
+        result = requests.get(f"{curseforge_url}/v1/mods/{mod_id}/files", headers={
+            'Accept': 'application/json',
+            'x-api-key': os.environ['CURSEFORGE_API_KEY']
+        }, params={
+            'index': index
+        }).json()
+        list += result["data"]
+        all = result["pagination"]["totalCount"]
+        index = result["pagination"]["index"] + result["pagination"]["resultCount"]
+        pass
+
+
+    return list
 
 
 print("[DB] Connect to database")
@@ -110,8 +124,8 @@ if 'CURSEFORGE_PROJECTS' in os.environ:
     for entry in os.environ['CURSEFORGE_PROJECTS'].split(';'):
         project = entry.split(',')
         print(f"[Download]   - downloading {project[0]}")
-        save_curseforge_mod(project[0], get_curseforge_mod(project[1]).json()["data"])
-        save_curseforge_files(project[0], get_curseforge_files(project[1]).json()["data"])
+        # save_curseforge_mod(project[0], get_curseforge_mod(project[1]).json()["data"])
+        save_curseforge_files(project[0], get_curseforge_files(project[1]))
 else:
     print("[Download] Skipping curseforge")
 print("[Download] End curseforge")
@@ -121,8 +135,8 @@ if 'MODRINTH_PROJECTS' in os.environ:
     for entry in os.environ['MODRINTH_PROJECTS'].split(';'):
         project = entry.split(',')
         print(f"[Download]   - downloading {project[0]}")
-        save_modrinth_mod(project[0], get_modrinth_mod(project[1]).json())
-        save_modrinth_files(project[0], get_modrinth_files(project[1]).json())
+        # save_modrinth_mod(project[0], get_modrinth_mod(project[1]).json())
+        # save_modrinth_files(project[0], get_modrinth_files(project[1]).json())
 else:
     print("[Download] Skipping modrinth")
 print("[Download] End modrinth")
