@@ -61,7 +61,6 @@ def get_curseforge_files(mod_id):
         index = result["pagination"]["index"] + result["pagination"]["resultCount"]
         pass
 
-
     return list
 
 
@@ -103,16 +102,17 @@ def save_curseforge_mod(name: str, data: dict):
 
 def save_modrinth_mod(name: str, data: dict):
     create_table(name)
-    db.execute(f'''INSERT INTO {dbname}.{name} (downloads, provider, time) VALUES ({data["downloads"]}, \'modrinth\', \'{str(time)}\')''')
+    db.execute(
+        f'''INSERT INTO {dbname}.{name} (downloads, provider, time) VALUES ({data["downloads"]}, \'modrinth\', \'{str(time)}\')''')
 
 
-def save_curseforge_files(name: str, data: dict):
+def save_curseforge_files(name: str, data: list):
     create_version_table(name)
     db.execute(
         f'INSERT INTO {dbname}.{name}_files (name, version, downloads, provider, time) VALUES {",".join([str((x["displayName"], x["fileName"].split("-", 1)[1][0:-4], x["downloadCount"], "curseforge", str(time))) for x in data])}')
 
 
-def save_modrinth_files(name: str, data: dict):
+def save_modrinth_files(name: str, data: list):
     create_version_table(name)
     db.execute(
         f"""INSERT INTO {dbname}.{name}_files (name, version, downloads, provider, time) VALUES {",".join([str((x["name"], x["version_number"], x["downloads"], "modrinth", str(time))) for x in data])}""")
@@ -121,10 +121,10 @@ def save_modrinth_files(name: str, data: dict):
 print("[Download] Start data provider")
 print("[Download] Start curseforge")
 if 'CURSEFORGE_PROJECTS' in os.environ:
-    for entry in os.environ['CURSEFORGE_PROJECTS'].split(';'):
+    for entry in os.environ['CURSEFORGE_PROJECTS'].split('-'):
         project = entry.split(',')
         print(f"[Download]   - downloading {project[0]}")
-        # save_curseforge_mod(project[0], get_curseforge_mod(project[1]).json()["data"])
+        save_curseforge_mod(project[0], get_curseforge_mod(project[1]).json()["data"])
         save_curseforge_files(project[0], get_curseforge_files(project[1]))
 else:
     print("[Download] Skipping curseforge")
@@ -132,11 +132,11 @@ print("[Download] End curseforge")
 
 print("[Download] Start modrinth")
 if 'MODRINTH_PROJECTS' in os.environ:
-    for entry in os.environ['MODRINTH_PROJECTS'].split(';'):
+    for entry in os.environ['MODRINTH_PROJECTS'].split('-'):
         project = entry.split(',')
         print(f"[Download]   - downloading {project[0]}")
-        # save_modrinth_mod(project[0], get_modrinth_mod(project[1]).json())
-        # save_modrinth_files(project[0], get_modrinth_files(project[1]).json())
+        save_modrinth_mod(project[0], get_modrinth_mod(project[1]).json())
+        save_modrinth_files(project[0], get_modrinth_files(project[1]).json())
 else:
     print("[Download] Skipping modrinth")
 print("[Download] End modrinth")
