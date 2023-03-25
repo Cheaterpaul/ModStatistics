@@ -207,12 +207,12 @@ def check_environment_variables():
         log("Error", "no DB_USER given")
     if os.environ["DB_PASSWORD"] is None:
         log("Error", "no DB_PASSWORD given")
-    if os.environ["CURSEFORGE_API_KEY"] is None:
-        log("Error", "no CURSEFORGE_API_KEY given")
     if os.environ["CURSEFORGE_PROJECTS"] is None:
         log("Error", "no CURSEFORGE_PROJECTS given")
     else:
         try:
+            if os.environ["CURSEFORGE_API_KEY"] is None:
+                log("Error", "no CURSEFORGE_API_KEY given")
             get_mod_ids(os.environ["CURSEFORGE_PROJECTS"])
         except Exception as e:
             log("Error", "CURSEFORGE_PROJECTS format is wrong\n" + str(e))

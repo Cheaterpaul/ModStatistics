@@ -3,24 +3,18 @@
 
 This docker image loads mod statistics from modrinth and curseforge and saves them in a mariadb database for further processing
 
-## License
-
-Do what every you want
-[MIT](https://choosealicense.com/licenses/mit/)
-
-
 ## What does it do?
 
 Docker image will run the python script daily at 12 AM.
-The script will create and fill the following tables in the database:
 
-
-
-
+**Error handling is not present** 
 
 ### Table Reference
 
 The tables split the data in modrinth and curseforge as the provided data is to different
+
+The script will create and fill the following tables in the database:
+
 #### mods
 
 | Columns | Type     | Description                |
@@ -111,3 +105,7 @@ networks:
 
 ```
 
+## License
+
+Do what every you want
+[MIT](https://choosealicense.com/licenses/mit/)
