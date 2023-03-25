@@ -6,145 +6,235 @@ import pymysql.cursors
 
 import requests
 
-print("[ModStats] Start")
-
-modrinth_url = "https://api.modrinth.com/v2"
-curseforge_url = "https://api.curseforge.com"
-
-dbname = os.environ["DB_DATABASE"]
+time = datetime.datetime.now()
 
 
-def get_db():
-    port = int(os.environ["DB_PORT"])
-    return pymysql.connect(
-        user=os.environ["DB_USER"],
-        password=os.environ["DB_PASSWORD"],
-        host=os.environ["DB_HOST"],
-        port=port,
-        database=dbname
-    )
+def log(marker: str, message: str):
+    print(f'[{datetime.datetime.now().timestamp()}] {marker} - {message}')
 
 
-def get_modrinth_mod(mod_id):
-    return requests.get(f"{modrinth_url}/project/{mod_id}", headers={
-        'User-Agent': 'Cheaterpaul/ModStatistics'
-    })
+class Database:
+    mods_table = "mods"
+    total_downloads_table = "total_downloads"
+    files_table = "files"
+    file_download_table = "file_downloads"
+
+    def __init__(self, host: str, port: int, p_database: str, user: str, password: str):
+        log("Database", "start connecting")
+        self.db = pymysql.connect(user=user, password=password, host=host, port=port, database=p_database)
+        self.cursor = self.db.cursor()
+        self.dbname = p_database
+        log("Database", "finished connecting")
+
+    def create_tables(self):
+        log("Database", "start creating tables")
+        self._create_mods_table_()
+        self._create_total_downloads_table_()
+        self._create_files_table_()
+        self._create_file_downloads_table_()
+        log("Database", "finished creating tables")
+
+    def close(self):
+        self.db.commit()
+        self.db.close()
+
+    def _create_mods_table_(self):
+        self.cursor.execute(f'''CREATE TABLE IF NOT EXISTS {self.dbname}.{self.mods_table} (
+                                                id int(32) AUTO_INCREMENT ,
+                                                name varchar(45) NOT NULL,
+                                                provider varchar(32) NOT NULL,
+                                                PRIMARY KEY (id)
+                                       ) auto_increment = 0''')
+
+    def _create_total_downloads_table_(self):
+        self.cursor.execute(f'''CREATE TABLE IF NOT EXISTS {self.dbname}.{self.total_downloads_table} (
+                                                        id int NOT NULL,
+                                                        time datetime NOT NULL,
+                                                        downloads int NOT NULL,
+                                                        PRIMARY KEY (id, time)
+                                               )''')
+
+    def _create_files_table_(self):
+        self.cursor.execute(f'''CREATE TABLE IF NOT EXISTS {self.dbname}.{self.files_table} (
+                                                        id int NOT NULL,
+                                                        name varchar(60) NOT NULL,
+                                                        version varchar(60) NOT NULL,
+                                                        PRIMARY KEY (id, version)
+                                               )''')
+
+    def _create_file_downloads_table_(self):
+        self.cursor.execute(f'''CREATE TABLE IF NOT EXISTS {self.dbname}.{self.file_download_table} (
+                                                                id int NOT NULL,
+                                                                version varchar(60) NOT NULL,
+                                                                time datetime NOT NULL,
+                                                                downloads int NOT NULL,
+                                                                PRIMARY KEY (id, version, time)
+                                                       )''')
+
+    def create_provider(self, mod: str, name: str) -> int:
+        self.cursor.execute(
+            f'''IF NOT EXISTS (SELECT mods.id FROM {self.dbname}.{self.mods_table} as mods WHERE mods.name = '{mod}' AND mods.provider = '{name}') THEN
+                                    INSERT INTO {self.dbname}.{self.mods_table}(name, provider)
+                                    VALUES('{mod}', '{name}');
+                                    SELECT mods.id FROM {self.dbname}.{self.mods_table} as mods WHERE name = '{mod}' AND mods.provider = '{name}' LIMIT 1;
+                                ELSE
+                                    SELECT mods.id FROM {self.dbname}.{self.mods_table} as mods WHERE name = '{mod}' AND mods.provider = '{name}' LIMIT 1;
+                                END IF''')
+        result = self.cursor.fetchone()
+        return result[0]
+
+    def save_total_downloads(self, id: int, time: datetime, downloads: int):
+        self.cursor.execute(
+            f'''INSERT INTO {self.dbname}.{self.total_downloads_table} (id, time, downloads) VALUE ({id}, '{str(time)}', {downloads})''')
+
+    def create_file(self, id: int, version: str, name: str):
+        self.cursor.execute(
+            f'''IF NOT EXISTS (SELECT files.version FROM {self.dbname}.{self.files_table} as files WHERE files.id = '{id}' AND files.version = '{version}') THEN
+                                            INSERT INTO {self.dbname}.{self.files_table}(id, version, name)
+                                            VALUES({id}, '{version}', '{name}');
+                                        END IF''')
+
+    def save_file_download(self, id: int, version: str, time: datetime, downloads: int):
+        self.cursor.execute(f'''INSERT INTO {self.dbname}.{self.file_download_table} (id, version, time, downloads)
+                                VALUES('{id}', '{version}', '{str(time)}', {downloads})''')
 
 
-def get_modrinth_files(project):
-    return requests.get(f"{modrinth_url}/project/{project}/version", headers={
-        'User-Agent': 'Cheaterpaul/ModStatistics'
-    })
+class ModDataProvider:
 
+    def __init__(self, db: Database, provider_name: str):
+        self.db = db
+        self.name = provider_name
 
-def get_curseforge_mod(mod_id):
-    return requests.get(f"{curseforge_url}/v1/mods/{mod_id}", headers={
-        'Accept': 'application/json',
-        'x-api-key': os.environ['CURSEFORGE_API_KEY']
-    })
+    def download_data(self):
+        log("DataProvider", f'start provider {self.name}')
+        for mod_id in self.get_mod_ids():
+            log("DataProvider", f'{self.name} - download {mod_id[0]}({mod_id[1]})')
+            id = self.db.create_provider(mod_id[0], self.name)
+            mod_data = self.get_mod(mod_id[1])
+            self.db.save_total_downloads(id, time, mod_data)
+            files_data = self.get_files(mod_id[1])
+            for file in files_data:
+                self.db.create_file(id, file[0], file[1])
+                self.db.save_file_download(id, file[0], time, file[2])
+        log("DataProvider", f'finished provider {self.name}')
 
-
-def get_curseforge_files(mod_id):
-    list = []
-    all = 1
-    index = 0
-
-    while index < all:
-        result = requests.get(f"{curseforge_url}/v1/mods/{mod_id}/files", headers={
-            'Accept': 'application/json',
-            'x-api-key': os.environ['CURSEFORGE_API_KEY']
-        }, params={
-            'index': index
-        }).json()
-        list += result["data"]
-        all = result["pagination"]["totalCount"]
-        index = result["pagination"]["index"] + result["pagination"]["resultCount"]
+    def get_mod(self, mod_id) -> int:
         pass
 
-    return list
+    def get_files(self, mod_id) -> [(str, str, int)]:
+        pass
+
+    def get_mod_ids(self) -> [(str, str)]:
+        pass
 
 
-print("[DB] Connect to database")
-conn = get_db()
-db = conn.cursor()
-print("[DB] Connection established")
+class Curseforge(ModDataProvider):
+
+    def __init__(self, db: Database, url: str, api_key: str):
+        super().__init__(db, "curseforge")
+        self.curseforge_url = url
+        self.api_key = api_key
+
+    def get_mod(self, mod_id: str):
+        return requests.get(f"{self.curseforge_url}/v1/mods/{mod_id}", headers={
+            'Accept': 'application/json',
+            'x-api-key': self.api_key
+        }).json()["data"]["downloadCount"]
+
+    def get_files(self, mod_id: str):
+        list = []
+        all = 1
+        index = 0
+
+        while index < all:
+            result = requests.get(f"{self.curseforge_url}/v1/mods/{mod_id}/files", headers={
+                'Accept': 'application/json',
+                'x-api-key': self.api_key
+            }, params={
+                'index': index
+            }).json()
+            list += result["data"]
+            all = result["pagination"]["totalCount"]
+            index = result["pagination"]["index"] + result["pagination"]["resultCount"]
+            pass
+        return [(x["fileName"].split("-", 1)[1][0:-4], x["displayName"], x["downloadCount"]) for x in list]
+
+    def get_mod_ids(self) -> [(str, str)]:
+        return get_mod_ids(os.environ['CURSEFORGE_PROJECTS'])
 
 
-def create_table(name: str):
-    db.execute(f'''CREATE TABLE IF NOT EXISTS {dbname}.{name} (
-                                        downloads int(32) NOT NULL,
-                                        provider varchar(45) NOT NULL,
-                                        time datetime NOT NULL,
-                                        PRIMARY KEY (provider, time)
-                               )''')
+class Modrinth(ModDataProvider):
+
+    def __init__(self, db: Database, url: str):
+        super().__init__(db, "modrinth")
+        self.url = url
+
+    def get_mod(self, mod_id: str):
+        return requests.get(f"{self.url}/project/{mod_id}", headers={
+            'User-Agent': 'Cheaterpaul/ModStatistics'
+        }).json()["downloads"]
+
+    def get_files(self, version: str):
+        return [(x["version_number"], x["name"], x["downloads"]) for x in
+                requests.get(f"{self.url}/project/{version}/version", headers={
+                    'User-Agent': 'Cheaterpaul/ModStatistics'
+                }).json()]
+
+    def get_mod_ids(self) -> [(str, str)]:
+        return get_mod_ids(os.environ['MODRINTH_PROJECTS'])
 
 
-def create_version_table(name: str):
-    db.execute(f'''CREATE TABLE IF NOT EXISTS {dbname}.{name}_files (
-                                            name varchar(60) NOT NULL,
-                                            version varchar(60) NOT NULL,
-                                            downloads int(32) NOT NULL,
-                                            provider varchar(45) NOT NULL,
-                                            time datetime NOT NULL,
-                                            PRIMARY KEY (version, provider, time)
-                                   )''')
+def get_mod_ids(string: str) -> [(str, str)]:
+    return [(y[0], y[1]) for y in [x.split("-") for x in string.split(",")]]
 
 
-time = datetime.datetime.now()
-print(f"[DateTime] Current time is {str(time)}")
+def check_environment_variables():
+    if os.environ["DB_HOST"] is None:
+        log("Error", "no DB_HOST given")
+    if os.environ["DB_PORT"] is None:
+        log("Error", "no DB_PORT given")
+    if os.environ["DB_DATABASE"] is None:
+        log("Error", "no DB_DATABASE given")
+    if os.environ["DB_USER"] is None:
+        log("Error", "no DB_USER given")
+    if os.environ["DB_PASSWORD"] is None:
+        log("Error", "no DB_PASSWORD given")
+    if os.environ["CURSEFORGE_API_KEY"] is None:
+        log("Error", "no CURSEFORGE_API_KEY given")
+    if os.environ["CURSEFORGE_PROJECTS"] is None:
+        log("Error", "no CURSEFORGE_PROJECTS given")
+    else:
+        try:
+            get_mod_ids(os.environ["CURSEFORGE_PROJECTS"])
+        except Exception as e:
+            log("Error", "CURSEFORGE_PROJECTS format is wrong\n" + str(e))
+            exit(1)
+    if os.environ["MODRINTH_PROJECTS"] is None:
+        log("Error", "no MODRINTH_PROJECTS given")
+    else:
+        try:
+            get_mod_ids(os.environ["MODRINTH_PROJECTS"])
+        except Exception as e:
+            log("Error", "MODRINTH_PROJECTS format is wrong\n" + str(e))
+            exit(1)
 
 
-def save_curseforge_mod(name: str, data: dict):
-    create_table(name)
-    command = f'''INSERT INTO {dbname}.{name} (downloads, provider, time) VALUES ({data["downloadCount"]}, \'curseforge\', \'{str(time)}\')'''
-    db.execute(command)
+log("Modstats", "started")
+check_environment_variables()
 
+database = Database(host=os.environ["DB_HOST"], port=int(os.environ["DB_PORT"]), p_database=os.environ["DB_DATABASE"],
+                    user=os.environ["DB_USER"], password=os.environ["DB_PASSWORD"])
 
-def save_modrinth_mod(name: str, data: dict):
-    create_table(name)
-    db.execute(
-        f'''INSERT INTO {dbname}.{name} (downloads, provider, time) VALUES ({data["downloads"]}, \'modrinth\', \'{str(time)}\')''')
+curseforge = Curseforge(database, "https://api.curseforge.com", os.environ['CURSEFORGE_API_KEY'])
+modrinth = Modrinth(database, "https://api.modrinth.com/v2")
 
+database.create_tables()
 
-def save_curseforge_files(name: str, data: list):
-    create_version_table(name)
-    db.execute(
-        f'INSERT INTO {dbname}.{name}_files (name, version, downloads, provider, time) VALUES {",".join([str((x["displayName"], x["fileName"].split("-", 1)[1][0:-4], x["downloadCount"], "curseforge", str(time))) for x in data])}')
+log("Modstats", "start provider")
+curseforge.download_data()
+modrinth.download_data()
+log("Modstats", "finished provider")
 
+database.close()
 
-def save_modrinth_files(name: str, data: list):
-    create_version_table(name)
-    db.execute(
-        f"""INSERT INTO {dbname}.{name}_files (name, version, downloads, provider, time) VALUES {",".join([str((x["name"], x["version_number"], x["downloads"], "modrinth", str(time))) for x in data])}""")
-
-
-print("[Download] Start data provider")
-print("[Download] Start curseforge")
-if 'CURSEFORGE_PROJECTS' in os.environ:
-    for entry in os.environ['CURSEFORGE_PROJECTS'].split('-'):
-        project = entry.split(',')
-        print(f"[Download]   - downloading {project[0]}")
-        save_curseforge_mod(project[0], get_curseforge_mod(project[1]).json()["data"])
-        save_curseforge_files(project[0], get_curseforge_files(project[1]))
-else:
-    print("[Download] Skipping curseforge")
-print("[Download] End curseforge")
-
-print("[Download] Start modrinth")
-if 'MODRINTH_PROJECTS' in os.environ:
-    for entry in os.environ['MODRINTH_PROJECTS'].split('-'):
-        project = entry.split(',')
-        print(f"[Download]   - downloading {project[0]}")
-        save_modrinth_mod(project[0], get_modrinth_mod(project[1]).json())
-        save_modrinth_files(project[0], get_modrinth_files(project[1]).json())
-else:
-    print("[Download] Skipping modrinth")
-print("[Download] End modrinth")
-print("[Download] End data provider")
-
-print("[DB] Commit changes")
-
-conn.commit()
-conn.close()
-
-print("[ModStats] Finished")
+log("Modstats", "finished")
