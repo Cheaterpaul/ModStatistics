@@ -12,6 +12,7 @@ time = datetime.datetime.now()
 def log(marker: str, message: str):
     print(f'[{datetime.datetime.now().timestamp()}] {marker} - {message}')
 
+sep = ",\n"
 
 class Database:
     mods_table = "mods"
@@ -94,9 +95,17 @@ class Database:
                                             VALUES({id}, '{version}', '{name}');
                                         END IF''')
 
+    def create_files(self, id: int, item: (str, str)):
+        self.cursor.execute(f'''INSERT INTO {self.dbname}.{self.files_table}(id, version, name)
+                                       VALUES {sep.join([f"({id},'{x[0]}','{x[1]}')" for x in item])}''')
+
     def save_file_download(self, id: int, version: str, time: datetime, downloads: int):
         self.cursor.execute(f'''INSERT INTO {self.dbname}.{self.file_download_table} (id, version, time, downloads)
                                 VALUES('{id}', '{version}', '{str(time)}', {downloads})''')
+
+    def save_file_downloads(self, id: int, time: datetime, item: (str, int)):
+        self.cursor.execute(f'''INSERT INTO {self.dbname}.{self.file_download_table} (id, version, time, downloads)
+                                VALUES {sep.join([f"({id},'{x[0]}','{str(time)}','{x[1]}')" for x in item])}''')
 
 
 class ModDataProvider:
@@ -113,9 +122,8 @@ class ModDataProvider:
             mod_data = self.get_mod(mod_id[1])
             self.db.save_total_downloads(id, time, mod_data)
             files_data = self.get_files(mod_id[1])
-            for file in files_data:
-                self.db.create_file(id, file[0], file[1])
-                self.db.save_file_download(id, file[0], time, file[2])
+            self.db.create_files(id, [(x[0], x[1]) for x in files_data])
+            self.db.save_file_downloads(id, time, [(x[0], x[2])for x in files_data])
         log("DataProvider", f'finished provider {self.name}')
 
     def get_mod(self, mod_id) -> int:
