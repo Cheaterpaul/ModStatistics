@@ -96,7 +96,7 @@ class Database:
                                         END IF''')
 
     def create_files(self, id: int, item: (str, str)):
-        self.cursor.execute(f'''INSERT INTO {self.dbname}.{self.files_table}(id, version, name)
+        self.cursor.execute(f'''INSERT IGNORE INTO {self.dbname}.{self.files_table}(id, version, name)
                                        VALUES {sep.join([f"({id},'{x[0]}','{x[1]}')" for x in item])}''')
 
     def save_file_download(self, id: int, version: str, time: datetime, downloads: int):
