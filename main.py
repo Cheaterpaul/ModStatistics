@@ -12,13 +12,16 @@ time = datetime.datetime.now()
 def log(marker: str, message: str):
     print(f'[{datetime.datetime.now().timestamp()}] {marker} - {message}')
 
+
 sep = ",\n"
+
 
 class Database:
     mods_table = "mods"
     total_downloads_table = "total_downloads"
     files_table = "files"
     file_download_table = "file_downloads"
+    versions_table = "versions"
 
     def __init__(self, host: str, port: int, p_database: str, user: str, password: str):
         log("Database", "start connecting")
@@ -33,11 +36,22 @@ class Database:
         self._create_total_downloads_table_()
         self._create_files_table_()
         self._create_file_downloads_table_()
+        self._create_versions_table()
         log("Database", "finished creating tables")
 
     def close(self):
         self.db.commit()
         self.db.close()
+
+    def _create_versions_table(self):
+        self.cursor.execute(f'''CREATE TABLE IF NOT EXISTS {self.dbname}.{self.versions_table} (
+                                                version varchar(60) NOT NULL, 
+                                                mcversion varchar(10),
+                                                majormcversion varchar(10),
+                                                modversion varchar(10),
+                                                majormodversion varchar(10),
+                                                PRIMARY KEY (version)
+                                        )''')
 
     def _create_mods_table_(self):
         self.cursor.execute(f'''CREATE TABLE IF NOT EXISTS {self.dbname}.{self.mods_table} (
@@ -107,6 +121,30 @@ class Database:
         self.cursor.execute(f'''INSERT INTO {self.dbname}.{self.file_download_table} (id, version, time, downloads)
                                 VALUES {sep.join([f"({id},'{x[0]}','{str(time)}','{x[1]}')" for x in item])}''')
 
+    def create_versions(self, versions: [str]):
+        list = []
+        for x in versions:
+            try:
+                split = x.split('-')
+                if len(split) > 1:
+                    mc = split[0]
+                    mcmajor = mc
+                    mod = split[1]
+                    modmajor = mod
+                    split = mc.split('.')
+                    if len(split) > 2:
+                        mcmajor = '.'.join(split[0:2])
+                    split = mod.split('-')[0].split('.')
+                    if len(split) > 2:
+                        modmajor = '.'.join(split[0:2])
+                    list.append((x, mc, mcmajor, mod, modmajor))
+            except Exception as e:
+                log("Warn - Parse Version", f"could not parse {x}")
+                pass
+        if len(list) > 0:
+            self.cursor.execute(f'''INSERT IGNORE INTO {self.dbname}.{self.versions_table} (version, mcversion, majormcversion, modversion, majormodversion)
+                                        VALUES {sep.join([f"('{x[0]}','{x[1]}','{x[2]}','{x[3]}','{x[4]}')" for x in list])}''')
+
 
 class ModDataProvider:
 
@@ -122,8 +160,9 @@ class ModDataProvider:
             mod_data = self.get_mod(mod_id[1])
             self.db.save_total_downloads(id, time, mod_data)
             files_data = self.get_files(mod_id[1])
+            self.db.create_versions([x[0] for x in files_data])
             self.db.create_files(id, [(x[0], x[1]) for x in files_data])
-            self.db.save_file_downloads(id, time, [(x[0], x[2])for x in files_data])
+            self.db.save_file_downloads(id, time, [(x[0], x[2]) for x in files_data])
         log("DataProvider", f'finished provider {self.name}')
 
     def get_mod(self, mod_id) -> int:
