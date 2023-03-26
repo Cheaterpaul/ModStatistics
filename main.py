@@ -10,7 +10,7 @@ time = datetime.datetime.now()
 
 
 def log(marker: str, message: str):
-    print(f'[{datetime.datetime.now().timestamp()}] {marker} - {message}')
+    print(f'[{str(datetime.datetime.now())}] {marker} - {message}')
 
 
 sep = ",\n"
