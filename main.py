@@ -115,11 +115,21 @@ class Database:
 
     def save_file_download(self, id: int, version: str, time: datetime, downloads: int):
         self.cursor.execute(f'''INSERT INTO {self.dbname}.{self.file_download_table} (id, version, time, downloads)
-                                VALUES('{id}', '{version}', '{str(time)}', {downloads})''')
+                                VALUES('{id}', '{version}', '{str(time)}', {downloads})
+                                ON DUPLICATE KEY UPDATE
+                                  id = VALUES(id),
+                                  version = VALUES(version),
+                                  time = VALUES(time),
+                                  downloads = VALUES(downloads)''')
 
     def save_file_downloads(self, id: int, time: datetime, item: (str, int)):
         self.cursor.execute(f'''INSERT INTO {self.dbname}.{self.file_download_table} (id, version, time, downloads)
-                                VALUES {sep.join([f"({id},'{x[0]}','{str(time)}','{x[1]}')" for x in item])}''')
+                                VALUES {sep.join([f"({id},'{x[0]}','{str(time)}','{x[1]}')" for x in item])}
+                                ON DUPLICATE KEY UPDATE
+                                  id = VALUES(id),
+                                  version = VALUES(version),
+                                  time = VALUES(time),
+                                  downloads = VALUES(downloads)''')
 
     def create_versions(self, versions: [str]):
         list = []
